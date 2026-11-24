@@ -1,0 +1,26 @@
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+
+# Build outputs & artifacts
+build*/
+DerivedData/
+*.ipa
+*.dmg
+CloudSwiftApp-iOS-Simulator.zip
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Package.resolved
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# VS Code & Editors
+.vscode/
+*.swp
+*~
