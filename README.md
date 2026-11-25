@@ -1,114 +1,98 @@
-# CloudSwiftApp
+# Cloud Swift Builder
 
-Build native **Swift** and **SwiftUI** apps for **iOS** and **macOS** from **Windows or Linux**—without owning a Mac—using **XcodeGen** and **GitHub Actions** (`macos-latest`).
+Compile Swift and SwiftUI apps for **iOS** (`.ipa` + Simulator `.zip`) and **macOS** (`.dmg`) directly on GitHub Actions — **100% free, zero external servers, and no local Mac required**.
 
----
-
-## How It Works
-
-1. You write Swift & SwiftUI code on Windows or Linux (e.g., in VS Code).
-2. **`project.yml`** defines the iOS (`17.0+`) and macOS (`14.0+`) app targets declaratively.
-3. On every push to `main` (or manual run via `workflow_dispatch`), **GitHub Actions** spins up a cloud macOS runner, generates `CloudSwiftApp.xcodeproj` with **XcodeGen**, and compiles:
-   - **`CloudSwiftApp-iOS-unsigned.ipa`** — Unsigned iOS app package ready for sideloading onto a physical iPhone/iPad.
-   - **`CloudSwiftApp-iOS-Simulator.zip`** — Simulator build ready to run in browser-based iOS emulators like Appetize.io.
-   - **`CloudSwiftApp-macOS.dmg`** — Unsigned macOS disk image installer.
-4. Pushing a version tag (e.g., `v1.0.0`) automatically publishes a **GitHub Release** with all three artifacts attached.
+Built for developers on **Windows** and **Linux** who want to build, sideload, or test SwiftUI apps using only a GitHub repository.
 
 ---
 
-## Getting Started (Step-by-Step)
+## Quick Start (3 Steps)
 
-### 1. Create Your Repository
-1. Click **Use this template** at the top of this repository on GitHub and create a new repository.
-2. Clone your new repository to your Windows or Linux machine:
-   ```bash
-   git clone https://github.com/<your-username>/<your-repo>.git
-   cd <your-repo>
-   ```
-
-### 2. Set Up VS Code
-1. Open the folder in **Visual Studio Code**.
-2. Install the official **[Swift](https://marketplace.visualstudio.com/items?itemName=sswg.swift-lang)** extension (`sswg.swift-lang`) for syntax highlighting and Swift language support.
-3. Edit `Sources/ContentView.swift` (for example, change the text or button label).
-
-### 3. Trigger Your First Cloud Build
-Commit and push your changes to `main`:
-```bash
-git add .
-git commit -m "Customize CloudSwiftApp UI"
-git push origin main
-```
-Or trigger a build manually without pushing code:
-1. Go to the **Actions** tab in your GitHub repository.
-2. Select **Build CloudSwiftApp**.
-3. Click **Run workflow** and choose `all`, `ios`, or `macos`.
-
-Once the workflow finishes, download your compiled artifacts from the **Artifacts** section at the bottom of the workflow run summary.
+1. **Zip your project** (max **25 MB**, GitHub's native issue attachment limit).
+   - Want to test immediately? Zip the contents of [`sample-app/`](sample-app/) (e.g., `Sources/` and `project.yml`).
+2. **Open a Build Request**:
+   - Go to the **Issues** tab → **New Issue** → **Build Swift App (iOS / macOS)**.
+   - Drag and drop your `.zip` file into the **Project Archive (.zip)** field, choose your **Target Platform**, and click **Submit new issue**.
+3. **Download your binaries**:
+   - Wait ~2–4 minutes for GitHub Actions to finish compiling on `macos-latest`.
+   - The bot will comment on your issue with direct download links (or the last 60 lines of the `xcodebuild` error log if compilation failed) and automatically close the issue.
 
 ---
 
-## Adding Files & Swift Packages (`project.yml`)
+## Supported `.zip` Project Structures
 
-### Adding New `.swift` Files or Assets
-Any `.swift` file placed inside `Sources/` and any asset added to `Resources/Assets.xcassets/` is automatically included in both iOS and macOS targets—no manual `.xcodeproj` edits required.
+The build engine automatically detects how your archive is organized:
 
-### Adding Swift Package Manager (SPM) Dependencies
-Open `project.yml` and add a `packages` block at the root, then link the dependency inside your target(s):
-
-```yaml
-packages:
-  Alamofire:
-    url: https://github.com/Alamofire/Alamofire.git
-    from: 5.9.0
-
-targets:
-  CloudSwiftApp-iOS:
-    # ... existing configuration ...
-    dependencies:
-      - package: Alamofire
+### 1. XcodeGen (`project.yml`)
+Include a `project.yml` file at the root of your `.zip`:
+```text
+my-app.zip
+├── project.yml
+└── Sources/
+    ├── App.swift
+    └── ContentView.swift
 ```
 
----
+### 2. Existing Xcode Project (`.xcodeproj` or `.xcworkspace`)
+Include your existing Xcode project or workspace:
+```text
+my-app.zip
+├── MyApp.xcodeproj/
+└── MyApp/
+    ├── MyAppApp.swift
+    └── ContentView.swift
+```
+The primary application scheme is detected automatically via `xcodebuild -list -json`.
 
-## Installing the `.ipa` on a Physical iPhone (Windows / Linux)
-
-Because this template builds without a paid Apple Developer account, the `.ipa` is unsigned. You can install it on your own iPhone or iPad using a **free Apple ID** with one of these tools:
-
-- **[Sideloadly](https://sideloadly.io/)** (Windows & macOS)
-  1. Download `CloudSwiftApp-iOS-unsigned.ipa` from GitHub Actions Artifacts and unzip it.
-  2. Connect your iPhone via USB, open Sideloadly, drag in the `.ipa`, enter your Apple ID, and click **Start**.
-  3. On your iPhone, go to **Settings > General > VPN & Device Management** and trust your developer profile.
-- **[AltStore](https://altstore.io/)** (Windows & Linux via AltServer)
-  1. Install AltServer on your computer and AltStore on your iPhone.
-  2. Transfer the `.ipa` to your iPhone and open it in AltStore to sign and install it.
-
-> **7-Day Renewal Note:** Apps signed with a free Apple ID expire after **7 days** and must be re-signed (AltStore can refresh them automatically over Wi-Fi when your computer is on the same network).
-
----
-
-## Testing in Your Browser Without an iPhone (Appetize.io)
-
-If you do not have an iPhone available, you can test the iOS build directly in your browser:
-1. Download **`CloudSwiftApp-iOS-Simulator.zip`** from the GitHub Actions run artifacts.
-2. Unzip it once if GitHub Actions wrapped it in an outer artifact zip so you have `CloudSwiftApp-iOS-Simulator.zip` (containing `CloudSwiftApp-iOS.app`).
-3. Upload `CloudSwiftApp-iOS-Simulator.zip` to **[Appetize.io](https://appetize.io/)** (which offers a free tier for testing) to launch an interactive iOS simulator in your browser.
+### 3. Standalone `.swift` Files
+No `project.yml` or `.xcodeproj`? Just zip your `.swift` files:
+```text
+my-app.zip
+├── App.swift
+└── ContentView.swift
+```
+Optionally provide **App Name** and **Bundle Identifier** in the issue form; the builder will generate a valid XcodeGen project targeting iOS 17.0 / macOS 14.0 automatically.
 
 ---
 
-## GitHub Actions Minutes Warning
+## Installing the `.ipa` on iPhone / iPad (Windows & Linux)
 
-- **Public repositories:** GitHub Actions minutes on `macos-latest` are **unlimited and free**.
-- **Private repositories:** GitHub applies a **10x minute multiplier** to macOS runners (1 minute on `macos-latest` consumes 10 minutes of your monthly free quota). Keep your repository public while learning, or use the `platform` input on `workflow_dispatch` to build only `ios` or `macos` when testing in private repos.
+Because builds are compiled **unsigned** (`CODE_SIGNING_ALLOWED=NO`), you can sign and install the `.ipa` onto your own device using a **free Apple ID**:
+
+- **Windows (Sideloadly)**:
+  1. Download `*-iOS-unsigned.ipa` from the issue comment.
+  2. Open [Sideloadly](https://sideloadly.io/), connect your iPhone via USB, drag in the `.ipa`, enter your Apple ID, and click **Start**.
+  3. On your iPhone, go to **Settings → General → VPN & Device Management** and trust your developer profile.
+- **Windows (AltStore)** / **Linux (AltServer / SideStore)**:
+  - Use AltServer/AltStore to sideload the `.ipa` with your free Apple ID.
+
+> **Note:** Apps signed with a free Apple ID remain valid for 7 days before needing a quick refresh.
 
 ---
 
-## Optional: Adding Official Code Signing (Paid Apple Developer Account)
+## Testing in the Browser with Appetize.io (No iPhone Needed)
 
-If you enroll in the Apple Developer Program (\$99/year) and want signed App Store / TestFlight / notarized builds:
+When you select **iOS** or **Both**, the workflow also produces `*-iOS-Simulator.zip`.
+1. Download `*-iOS-Simulator.zip` from the issue comment.
+2. Upload it to [Appetize.io](https://appetize.io) to run and interact with your iOS app directly in any web browser on Windows or Linux.
 
-1. Export your distribution certificate as a `.p12` file and download your `.mobileprovision` profile from the Apple Developer portal.
-2. Base64-encode both files and store them in **Settings > Secrets and variables > Actions**:
-   - `APPLE_CERTIFICATE_BASE64`
-   - `APPLE_CERTIFICATE_PASSWORD`
-   - `PROVISIONING_PROFILE_BASE64`
-3. Update `.github/workflows/build.yml` to import the certificate into a temporary macOS keychain, install the provisioning profile into `~/Library/MobileDevice/Provisioning Profiles/`, and remove the `CODE_SIGNING_ALLOWED=NO` flags from `xcodebuild`.
+---
+
+## Security & Retention Architecture
+
+Compiling third-party Swift projects runs arbitrary code (`xcodebuild`, Swift macros, build scripts). This repository isolates untrusted execution using a strict 3-job pipeline:
+
+1. **`validate` (`ubuntu-latest`, `permissions: { issues: read }`)**:
+   - Parses the issue form with `scripts/parse_issue.py`.
+   - Enforces **SSRF protection**: only `https://github.com/` and `https://objects.githubusercontent.com/` attachment URLs are accepted.
+   - Sanitizes `app_name` and `bundle_id` inputs.
+2. **`compile` (`macos-latest`, `permissions: {}`)**:
+   - Runs with **zero GitHub token permissions**, ensuring no `GITHUB_TOKEN` privileges exist while compiling user code.
+   - Checks out only `scripts/` with `persist-credentials: false`.
+   - Downloads the `.zip` (capped at 35 MB) and extracts it with **Zip Slip**, **symlink**, and **zip-bomb** protections inside `/tmp/user_workspace`.
+   - Uploads binaries and `build_report.md` (with internal paths redacted) as a 1-day workflow artifact.
+3. **`deliver` (`ubuntu-latest`, `permissions: { contents: write, issues: write }`)**:
+   - Publishes binaries to a temporary prerelease (`build-<issue>-<run_id>`), comments the download links (or build errors) on the issue, applies `build-success` / `build-failed`, and closes the issue.
+
+### Automatic 7-Day Cleanup
+The scheduled workflow [`.github/workflows/cleanup-releases.yml`](.github/workflows/cleanup-releases.yml) runs daily at `04:00 UTC` (and can be triggered manually) to delete all `build-*` releases and their Git tags older than **7 days**, keeping repository storage clean.

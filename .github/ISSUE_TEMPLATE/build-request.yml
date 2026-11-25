@@ -1,0 +1,55 @@
+name: Build Swift App (iOS / macOS)
+description: Upload your Swift project ZIP to compile an unsigned .ipa or .dmg in the cloud.
+title: "[Build] "
+labels: ["build-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### How to Submit a Cloud Build
+
+        Compress your Swift project into a `.zip` archive (**maximum 25 MB**, GitHub's native attachment limit) and drag it into the **Project Archive (.zip)** field below.
+
+        **Supported Project Structures:**
+        1. **XcodeGen (`project.yml`)**: Include a `project.yml` at the root of your archive.
+        2. **Existing Xcode Project**: Include a `.xcodeproj` or `.xcworkspace` at the root of your archive.
+        3. **Standalone Swift Files**: Include one or more `.swift` files (e.g., `App.swift`, `ContentView.swift`); a SwiftUI project will be generated automatically.
+
+  - type: textarea
+    id: project_zip
+    attributes:
+      label: Project Archive (.zip)
+      description: Drag and drop your `.zip` file here (max 25 MB). Wait until the upload finishes before submitting the issue.
+      placeholder: Drop your-project.zip here...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Target Platform
+      description: Choose which platform binaries you want to build.
+      options:
+        - ios (iOS (.ipa + Simulator))
+        - macos (macOS (.dmg))
+        - both (Both (iOS + macOS))
+    validations:
+      required: true
+
+  - type: input
+    id: app_name
+    attributes:
+      label: App Name (Optional)
+      description: Used only when uploading standalone `.swift` files without a `.xcodeproj` or `project.yml`.
+      placeholder: MyCloudApp
+    validations:
+      required: false
+
+  - type: input
+    id: bundle_id
+    attributes:
+      label: Bundle Identifier (Optional)
+      description: Reverse-DNS identifier used when generating a project from standalone `.swift` files.
+      placeholder: com.example.mycloudapp
+    validations:
+      required: false

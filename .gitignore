@@ -1,26 +1,19 @@
-# Xcode
-*.xcodeproj
-*.xcworkspace
-xcuserdata/
-
-# Build outputs & artifacts
-build*/
+# Xcode & Swift build artifacts
+.DS_Store
+*.xcodeproj/
+*.xcworkspace/
 DerivedData/
+build/
+.build/
 *.ipa
 *.dmg
-CloudSwiftApp-iOS-Simulator.zip
+*.app/
+*.zip
 
-# Swift Package Manager
-.swiftpm/
-.build/
-Package.resolved
+# Python
+__pycache__/
+*.py[cod]
+.venv/
 
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# VS Code & Editors
-.vscode/
-*.swp
-*~
+# Temporary workflow outputs
+build_outputs/

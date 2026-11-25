@@ -1,0 +1,58 @@
+name: Cleanup Expired Build Releases
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    name: Delete Build Releases Older Than 7 Days
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove expired build-* releases and tags
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const cutoffMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+
+            let deletedCount = 0;
+            for (const release of releases) {
+              if (!release.tag_name || !release.tag_name.startsWith('build-')) {
+                continue;
+              }
+              const createdMs = Date.parse(release.created_at);
+              if (Number.isNaN(createdMs) || createdMs >= cutoffMs) {
+                continue;
+              }
+
+              console.log(`Deleting expired release ${release.tag_name} (created ${release.created_at})`);
+              await github.rest.repos.deleteRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id,
+              });
+
+              try {
+                await github.rest.git.deleteRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: `tags/${release.tag_name}`,
+                });
+              } catch (err) {
+                if (err.status !== 404 && err.status !== 422) {
+                  throw err;
+                }
+              }
+              deletedCount += 1;
+            }
+
+            console.log(`Cleanup complete. Deleted ${deletedCount} expired release(s).`);

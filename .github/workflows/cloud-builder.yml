@@ -1,0 +1,248 @@
+name: Cloud Swift Builder
+
+on:
+  issues:
+    types: [opened]
+
+permissions: {}
+
+jobs:
+  validate:
+    name: Validate Build Request
+    if: contains(github.event.issue.labels.*.name, 'build-request')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: read
+    outputs:
+      valid: ${{ steps.parse.outputs.valid }}
+      zip_url: ${{ steps.parse.outputs.zip_url }}
+      platform: ${{ steps.parse.outputs.platform }}
+      app_name: ${{ steps.parse.outputs.app_name }}
+      bundle_id: ${{ steps.parse.outputs.bundle_id }}
+      error_message: ${{ steps.parse.outputs.error_message }}
+    steps:
+      - name: Checkout parser script
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            scripts
+          sparse-checkout-cone-mode: false
+
+      - name: Parse and validate issue payload
+        id: parse
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: python3 scripts/parse_issue.py
+
+  compile:
+    name: Compile Swift Project
+    needs: validate
+    if: needs.validate.result == 'success' && needs.validate.outputs.valid == 'true'
+    runs-on: macos-latest
+    permissions: {}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout build scripts only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            scripts
+          sparse-checkout-cone-mode: false
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Prepare and build project in isolated workspace
+        env:
+          ZIP_URL: ${{ needs.validate.outputs.zip_url }}
+          TARGET_PLATFORM: ${{ needs.validate.outputs.platform }}
+          APP_NAME: ${{ needs.validate.outputs.app_name }}
+          BUNDLE_ID: ${{ needs.validate.outputs.bundle_id }}
+        run: |
+          mkdir -p /tmp/user_workspace /tmp/build_outputs
+          cd /tmp/user_workspace
+          python3 "${{ github.workspace }}/scripts/prepare_and_build.py"
+
+      - name: Upload build outputs and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-outputs
+          path: /tmp/build_outputs
+          retention-days: 1
+          if-no-files-found: warn
+
+  deliver:
+    name: Deliver Build Artifacts
+    needs: [validate, compile]
+    if: always() && contains(github.event.issue.labels.*.name, 'build-request')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - name: Download build outputs
+        if: needs.validate.result == 'success'
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: build-outputs
+          path: ./build_outputs
+
+      - name: Check compiled binaries
+        id: check_files
+        if: needs.compile.result == 'success'
+        run: |
+          shopt -s nullglob
+          files=(build_outputs/*.ipa build_outputs/*-Simulator.zip build_outputs/*.dmg)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "has_binaries=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_binaries=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create temporary GitHub Release
+        if: needs.compile.result == 'success' && steps.check_files.outputs.has_binaries == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.event.issue.number }}-${{ github.run_id }}
+          name: "Cloud Build #${{ github.event.issue.number }}"
+          body: |
+            Automated unsigned build triggered by issue #${{ github.event.issue.number }}.
+            This temporary release and its binaries will be automatically deleted after 7 days.
+          prerelease: true
+          files: |
+            build_outputs/*.ipa
+            build_outputs/*-Simulator.zip
+            build_outputs/*.dmg
+
+      - name: Post success comment and close issue
+        if: needs.compile.result == 'success' && steps.check_files.outputs.has_binaries == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = `build-${context.issue.number}-${context.runId}`;
+            const { data: release } = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag,
+            });
+
+            const assetLines = release.assets.map(
+              (a) => `- **${a.name}** (${(a.size / (1024 * 1024)).toFixed(2)} MB): [Download](${a.browser_download_url})`
+            );
+
+            const hasIpa = release.assets.some((a) => a.name.endsWith('.ipa'));
+            const hasSim = release.assets.some((a) => a.name.endsWith('-Simulator.zip'));
+
+            let instructions = '';
+            if (hasIpa) {
+              instructions += [
+                '',
+                '### Installing the `.ipa` on iPhone / iPad (Windows & Linux)',
+                '1. Download the `*-iOS-unsigned.ipa` file above.',
+                '2. Install **Sideloadly** (Windows/macOS) or **AltStore** (Windows) on your PC.',
+                '3. Connect your iOS device via USB, sign in with a free Apple ID, and sideload the `.ipa`.',
+                '4. On your iPhone, go to **Settings → General → VPN & Device Management** and trust your developer profile.',
+              ].join('\n');
+            }
+            if (hasSim) {
+              instructions += [
+                '',
+                '### Testing in the Browser (No iPhone Required)',
+                '- Upload the `*-iOS-Simulator.zip` file to [Appetize.io](https://appetize.io) to run your app in a cloud iOS simulator.',
+              ].join('\n');
+            }
+
+            const body = [
+              '### Build Succeeded',
+              '',
+              'Your Swift project compiled successfully:',
+              ...assetLines,
+              instructions,
+              '',
+              `> **Note:** These download links and the [temporary release](${release.html_url}) will automatically expire and be deleted in **7 days**.`,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['build-success'],
+            });
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              state: 'closed',
+            });
+
+      - name: Post failure comment and close issue
+        if: needs.compile.result != 'success' || steps.check_files.outputs.has_binaries != 'true'
+        uses: actions/github-script@v7
+        env:
+          VALIDATION_ERROR: ${{ needs.validate.outputs.error_message }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+          COMPILE_RESULT: ${{ needs.compile.result }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            let reason = 'Build failed.';
+            if (process.env.VALIDATE_RESULT !== 'success') {
+              reason = process.env.VALIDATION_ERROR || 'Issue validation failed. Please ensure a valid .zip attachment URL from GitHub is provided.';
+            } else if (process.env.COMPILE_RESULT === 'cancelled') {
+              reason = 'Compilation timed out or was cancelled.';
+            } else if (process.env.COMPILE_RESULT !== 'success') {
+              reason = 'Compilation failed during `xcodebuild`. See the log excerpt below.';
+            } else {
+              reason = 'Build completed but no output binaries (.ipa, -Simulator.zip, or .dmg) were produced.';
+            }
+
+            let logExcerpt = '';
+            const reportPath = path.join('build_outputs', 'build_report.md');
+            if (fs.existsSync(reportPath)) {
+              const content = fs.readFileSync(reportPath, 'utf8');
+              const lines = content.split(/\r?\n/);
+              const tail = lines.slice(-60).join('\n');
+              logExcerpt = `\n\n<details>\n<summary>Last 60 lines of build log (build_report.md)</summary>\n\n\`\`\`text\n${tail}\n\`\`\`\n</details>`;
+            }
+
+            const body = [
+              '### Build Failed',
+              '',
+              `**Reason:** ${reason}`,
+              logExcerpt,
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['build-failed'],
+            });
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              state: 'closed',
+            });
