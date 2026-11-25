@@ -35,6 +35,41 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: python3 scripts/parse_issue.py
 
+  acknowledge:
+    name: Acknowledge Build Request
+    needs: validate
+    if: needs.validate.result == 'success' && needs.validate.outputs.valid == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Post build started comment
+        uses: actions/github-script@v7
+        env:
+          TARGET_PLATFORM: ${{ needs.validate.outputs.platform }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const platform = process.env.TARGET_PLATFORM;
+            const runUrl = process.env.RUN_URL;
+            const body = [
+              '### Build Queued & Starting',
+              '',
+              `Your build request for **\`${platform}\`** has been validated and is now compiling on a \`macos-latest\` runner.`,
+              '',
+              '- **Estimated time:** ~2–5 minutes (timeout: 15 minutes).',
+              `- **Live progress:** [View workflow run](${runUrl})`,
+              '',
+              'Please wait — **do not close this issue**. Once the build finishes, this bot will automatically comment here with your direct download links (or the `xcodebuild` error log if compilation fails) and close the issue.',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
   compile:
     name: Compile Swift Project
     needs: validate
